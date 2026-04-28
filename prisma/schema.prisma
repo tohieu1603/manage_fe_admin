@@ -1,0 +1,88 @@
+// Prisma schema — CoolOps
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Technician {
+  id         String   @id
+  name       String
+  phone      String
+  initials   String
+  color      String
+  skill      String
+  rating     Float
+  jobsMonth  Int
+  status     String   // available | traveling | onsite | break | offline
+  location   String
+  eta        String
+  jobs       Job[]
+  createdAt  DateTime @default(now())
+}
+
+model Customer {
+  id        String   @id
+  name      String
+  type      String   // Doanh nghiệp | Cá nhân
+  address   String
+  phone     String?
+  units     Int
+  since     String
+  jobs      Job[]
+  devices   Device[]
+  createdAt DateTime @default(now())
+}
+
+model Device {
+  id          String   @id @default(cuid())
+  customerId  String
+  customer    Customer @relation(fields: [customerId], references: [id])
+  name        String
+  room        String
+  lastService String
+  warranty    String
+}
+
+model Job {
+  id           String   @id
+  title        String
+  type         String   // Lắp đặt | Sửa chữa | Bảo dưỡng
+  priority     String   // high | med | low
+  status       String   // pending | scheduled | traveling | in_progress | done | cancelled
+  customerId   String
+  customer     Customer @relation(fields: [customerId], references: [id])
+  address      String
+  technicianId String?
+  technician   Technician? @relation(fields: [technicianId], references: [id])
+  createdAt    String
+  scheduledAt  String
+  device       String
+  duration     String
+  amount       Int
+  notes        String
+  events       JobEvent[]
+}
+
+model JobEvent {
+  id     String @id @default(cuid())
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id])
+  time   String
+  actor  String
+  action String
+  detail String
+  order  Int
+}
+
+model Part {
+  id    String @id
+  name  String
+  stock Int
+  min   Int
+  unit  String
+  price Int
+}
