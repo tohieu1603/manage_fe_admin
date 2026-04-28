@@ -6,55 +6,50 @@ import { Eye } from "lucide-react";
 import NewJobButton from "./new-job-button";
 import JobRowActions from "./job-row-actions";
 import { SearchFilter } from "@/components/search-filter";
+import { Pagination } from "@/components/pagination";
 
+// Filter values use BE-native enums so the FE doesn't have to map both ways.
 const STATUS_OPTIONS = [
-  { value: "pending", label: "Chờ xếp" },
-  { value: "traveling", label: "Đang đến" },
+  { value: "new", label: "Mới" },
+  { value: "assigned", label: "Đã giao" },
+  { value: "en_route", label: "Đang đến" },
+  { value: "onsite", label: "Đã đến hiện trường" },
   { value: "in_progress", label: "Đang làm" },
-  { value: "done", label: "Hoàn tất" },
+  { value: "paused", label: "Tạm dừng" },
+  { value: "completed", label: "Hoàn tất" },
   { value: "cancelled", label: "Đã huỷ" },
 ];
 
-const TYPE_OPTIONS = [
-  { value: "Lắp đặt", label: "Lắp đặt" },
-  { value: "Sửa chữa", label: "Sửa chữa" },
-  { value: "Bảo dưỡng", label: "Bảo dưỡng" },
-  { value: "Nạp gas", label: "Nạp gas" },
-  { value: "Tháo dỡ", label: "Tháo dỡ" },
-];
+const PAGE_SIZE = 20;
 
 export default async function JobsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; status?: string; type?: string }>;
+  searchParams: Promise<{ q?: string; status?: string; page?: string }>;
 }) {
   const params = await searchParams;
-  const [jobs, customers, techs] = await Promise.all([
-    db.job.findMany({
-      include: { customer: true, technician: true },
-      orderBy: { scheduledAt: "desc" },
+  const page = Math.max(1, Number(params.page) || 1);
+
+  // Pagination + filter pushed to BE — no more client-side .filter() so
+  // total counts and page jumps stay accurate even on big datasets.
+  const [jobsResult, customers, techs] = await Promise.all([
+    db.job.findPaginated({
+      page,
+      limit: PAGE_SIZE,
+      search: params.q?.trim() || undefined,
+      status: params.status || undefined,
     }),
     db.customer.findMany(),
     db.technician.findMany(),
   ]);
 
-  // Client-side filter on adapted shape (BE filter would need extra params).
-  const q = params.q?.toLowerCase().trim() ?? "";
-  const filtered = jobs.filter((j) => {
-    if (params.status && j.status !== params.status) return false;
-    if (params.type && j.type !== params.type) return false;
-    if (q) {
-      const hay = `${j.code} ${j.title} ${j.customer?.name ?? ""}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
-  });
+  const jobs = jobsResult.data;
 
   return (
     <div>
       <PageHeader
         title="Công việc"
-        subtitle={`${filtered.length}/${jobs.length} công việc`}
+        subtitle={`${jobsResult.total} công việc`}
         actions={
           <NewJobButton
             customers={customers.map((c) => ({ id: c.id, name: c.name }))}
@@ -65,14 +60,11 @@ export default async function JobsPage({
       <div className="p-8">
         <SearchFilter
           placeholder="Tìm theo mã, tiêu đề hoặc khách hàng…"
-          filters={[
-            { key: "status", label: "Trạng thái", options: STATUS_OPTIONS },
-            { key: "type", label: "Loại", options: TYPE_OPTIONS },
-          ]}
+          filters={[{ key: "status", label: "Trạng thái", options: STATUS_OPTIONS }]}
         />
 
         <div className="card overflow-hidden">
-          {filtered.length === 0 ? (
+          {jobs.length === 0 ? (
             <div className="p-16 text-center text-sm text-ink-500">
               Không tìm thấy công việc nào.
             </div>
@@ -92,7 +84,7 @@ export default async function JobsPage({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((j) => (
+                {jobs.map((j) => (
                   <tr key={j.id} className="border-t border-ink-100 hover:bg-ink-25">
                     <td className="px-4 py-3 font-mono text-xs">
                       <Link href={`/jobs/${j.id}`} className="text-brand-600 hover:underline">
@@ -163,6 +155,12 @@ export default async function JobsPage({
               </tbody>
             </table>
           )}
+          <Pagination
+            page={jobsResult.page}
+            totalPages={jobsResult.totalPages}
+            total={jobsResult.total}
+            limit={jobsResult.limit}
+          />
         </div>
       </div>
     </div>

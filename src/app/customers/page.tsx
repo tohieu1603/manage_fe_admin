@@ -1,39 +1,42 @@
 import { db } from "@/lib/data";
 import { PageHeader } from "@/components/ui";
-import { fmtVND } from "@/lib/utils";
 import Link from "next/link";
 import { Building2, User } from "lucide-react";
 import { NewCustomerButton, EditDeleteCustomer } from "./customer-actions";
 import { SearchFilter } from "@/components/search-filter";
+import { Pagination } from "@/components/pagination";
 
 const TYPE_OPTIONS = [
   { value: "Cá nhân", label: "Cá nhân" },
   { value: "Doanh nghiệp", label: "Doanh nghiệp" },
 ];
 
+const PAGE_SIZE = 12;
+
 export default async function Customers({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; type?: string }>;
+  searchParams: Promise<{ q?: string; type?: string; page?: string }>;
 }) {
   const params = await searchParams;
-  const customers = await db.customer.findMany({ include: { jobs: true } });
+  const page = Math.max(1, Number(params.page) || 1);
 
-  const q = params.q?.toLowerCase().trim() ?? "";
-  const filtered = customers.filter((c) => {
-    if (params.type && c.type !== params.type) return false;
-    if (q) {
-      const hay = `${c.name} ${c.address} ${c.phone ?? ""}`.toLowerCase();
-      if (!hay.includes(q)) return false;
-    }
-    return true;
+  const result = await db.customer.findPaginated({
+    page,
+    limit: PAGE_SIZE,
+    search: params.q?.trim() || undefined,
   });
+
+  // Type filter is FE-only (adapter exposes adapted "Cá nhân"/"Doanh nghiệp")
+  // and the BE customer list endpoint doesn't take a type param yet, so we
+  // narrow the page slice — accept that this skews count when filtering.
+  const customers = params.type ? result.data.filter((c) => c.type === params.type) : result.data;
 
   return (
     <div>
       <PageHeader
         title="Khách hàng"
-        subtitle={`${filtered.length}/${customers.length} khách hàng`}
+        subtitle={`${result.total} khách hàng`}
         actions={<NewCustomerButton />}
       />
       <div className="p-8">
@@ -41,17 +44,14 @@ export default async function Customers({
           placeholder="Tìm theo tên, địa chỉ, SĐT…"
           filters={[{ key: "type", label: "Loại", options: TYPE_OPTIONS }]}
         />
-        {filtered.length === 0 ? (
+        {customers.length === 0 ? (
           <div className="card p-16 text-center text-sm text-ink-500">
             Không tìm thấy khách hàng phù hợp.
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4">
-            {filtered.map((c) => {
-              const revenue = c.jobs
-                .filter((j) => j.status === "done")
-                .reduce((s, j) => s + j.amount, 0);
-              return (
+          <>
+            <div className="grid grid-cols-2 gap-4">
+              {customers.map((c) => (
                 <div
                   key={c.id}
                   className="card p-5 hover:shadow-md transition-shadow relative"
@@ -85,18 +85,22 @@ export default async function Customers({
                           <span>
                             <b>{c.units}</b> thiết bị
                           </span>
-                          <span>
-                            <b>{c.jobs.length}</b> đơn
-                          </span>
-                          <span className="text-ok-600 font-semibold">{fmtVND(revenue)}</span>
                         </div>
                       </div>
                     </div>
                   </Link>
                 </div>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+            <div className="card mt-4">
+              <Pagination
+                page={result.page}
+                totalPages={result.totalPages}
+                total={result.total}
+                limit={result.limit}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>

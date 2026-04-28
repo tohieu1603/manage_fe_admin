@@ -5,37 +5,49 @@ import { AlertTriangle } from "lucide-react";
 import { NewPartButton, StockMoveButtons } from "./inventory-actions";
 import PartRowActions from "./part-row-actions";
 import { SearchFilter } from "@/components/search-filter";
+import { Pagination } from "@/components/pagination";
+
+const PAGE_SIZE = 20;
 
 export default async function Inventory({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string; lowStock?: string }>;
+  searchParams: Promise<{ q?: string; lowStock?: string; page?: string }>;
 }) {
   const params = await searchParams;
-  const parts = await db.part.findMany();
-  const total = parts.reduce((s, p) => s + p.stock * p.price, 0);
-  const low = parts.filter((p) => p.stock < p.min);
+  const page = Math.max(1, Number(params.page) || 1);
 
-  const q = params.q?.toLowerCase().trim() ?? "";
-  const filtered = parts.filter((p) => {
-    if (params.lowStock === "yes" && p.stock >= p.min) return false;
-    if (q && !p.name.toLowerCase().includes(q)) return false;
-    return true;
-  });
+  // We pull two slices: the BE-paginated page (for the table) and a small
+  // aggregate fetch for the summary card. Aggregates need every part so
+  // they're not affected by pagination / filter.
+  const [result, allParts] = await Promise.all([
+    db.part.findPaginated({
+      page,
+      limit: PAGE_SIZE,
+      search: params.q?.trim() || undefined,
+    }),
+    db.part.findMany(),
+  ]);
+
+  const totalValue = allParts.reduce((s, p) => s + p.stock * p.price, 0);
+  const lowAll = allParts.filter((p) => p.stock < p.min);
+
+  // BE doesn't have a low-stock filter, so apply it within the page.
+  const parts = params.lowStock === "yes" ? result.data.filter((p) => p.stock < p.min) : result.data;
 
   return (
     <div>
       <PageHeader
         title="Kho vật tư"
-        subtitle={`${parts.length} vật tư · Giá trị tồn ${fmtVND(total)}`}
+        subtitle={`${result.total} vật tư · Giá trị tồn ${fmtVND(totalValue)}`}
         actions={<NewPartButton />}
       />
       <div className="p-8 space-y-6">
-        {low.length > 0 && (
+        {lowAll.length > 0 && (
           <div className="card p-4 border-l-4 border-warn-500 bg-warn-50">
             <div className="flex items-center gap-2 font-semibold text-warn-700">
               <AlertTriangle className="w-4 h-4" />
-              Cần nhập thêm {low.length} vật tư
+              Cần nhập thêm {lowAll.length} vật tư
             </div>
           </div>
         )}
@@ -52,7 +64,7 @@ export default async function Inventory({
         />
 
         <div className="card overflow-hidden">
-          {filtered.length === 0 ? (
+          {parts.length === 0 ? (
             <div className="p-16 text-center text-sm text-ink-500">Không tìm thấy vật tư.</div>
           ) : (
             <table className="w-full text-sm">
@@ -67,7 +79,7 @@ export default async function Inventory({
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => {
+                {parts.map((p) => {
                   const isLow = p.stock < p.min;
                   return (
                     <tr key={p.id} className="border-t border-ink-100 hover:bg-ink-25">
@@ -94,6 +106,12 @@ export default async function Inventory({
               </tbody>
             </table>
           )}
+          <Pagination
+            page={result.page}
+            totalPages={result.totalPages}
+            total={result.total}
+            limit={result.limit}
+          />
         </div>
       </div>
     </div>

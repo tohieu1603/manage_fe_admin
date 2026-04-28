@@ -169,6 +169,26 @@ async function fetchTechIndex(): Promise<Map<string, number>> {
   return m;
 }
 
+// Extra args beyond Prisma's surface — pages calling pagination/search use
+// these directly. Kept separate so existing `findMany` callers don't have to
+// change.
+export interface PaginatedArgs {
+  page?: number;
+  limit?: number;
+  search?: string;
+  status?: string;
+  technicianId?: string;
+  customerId?: string;
+}
+
+export interface PaginatedResult<T> {
+  data: T[];
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
 export const db = {
   job: {
     async findMany(args: FindManyArgs = {}) {
@@ -180,6 +200,28 @@ export const db = {
         fetchTechIndex(),
       ]);
       return wrap.data.map((j) => adaptJob(j, techIdx));
+    },
+    // Returns BE-paginated rows + meta so pages can render server-side
+    // pagination and pass the meta into the <Pagination> component.
+    async findPaginated(args: PaginatedArgs = {}): Promise<PaginatedResult<ReturnType<typeof adaptJob>>> {
+      const qs = new URLSearchParams();
+      qs.set("page", String(args.page ?? 1));
+      qs.set("limit", String(Math.min(args.limit ?? 20, 100)));
+      if (args.search) qs.set("search", args.search);
+      if (args.status) qs.set("status", args.status);
+      if (args.technicianId) qs.set("technicianId", args.technicianId);
+      if (args.customerId) qs.set("customerId", args.customerId);
+      const [wrap, techIdx] = await Promise.all([
+        api.list<BeJob[]>(`/jobs?${qs}`),
+        fetchTechIndex(),
+      ]);
+      return {
+        data: wrap.data.map((j) => adaptJob(j, techIdx)),
+        page: wrap.meta?.page ?? 1,
+        limit: wrap.meta?.limit ?? 20,
+        total: wrap.meta?.total ?? wrap.data.length,
+        totalPages: wrap.meta?.totalPages ?? 1,
+      };
     },
     async findUnique(args: FindUniqueArgs) {
       try {
@@ -200,6 +242,20 @@ export const db = {
     },
   },
   customer: {
+    async findPaginated(args: PaginatedArgs = {}): Promise<PaginatedResult<ReturnType<typeof adaptCustomer>>> {
+      const qs = new URLSearchParams();
+      qs.set("page", String(args.page ?? 1));
+      qs.set("limit", String(Math.min(args.limit ?? 20, 100)));
+      if (args.search) qs.set("search", args.search);
+      const wrap = await api.list<BeCustomer[]>(`/customers?${qs}`);
+      return {
+        data: wrap.data.map((c) => adaptCustomer(c)),
+        page: wrap.meta?.page ?? 1,
+        limit: wrap.meta?.limit ?? 20,
+        total: wrap.meta?.total ?? wrap.data.length,
+        totalPages: wrap.meta?.totalPages ?? 1,
+      };
+    },
     async findMany(args: FindManyArgs = {}) {
       // BE caps page size at 100 — clamp here so callers passing 200+ don't
       // 400 back from the validator.
@@ -234,6 +290,20 @@ export const db = {
     async findMany() {
       const wrap = await api.list<BePart[]>(`/parts?limit=100`);
       return wrap.data.map(adaptPart);
+    },
+    async findPaginated(args: PaginatedArgs = {}): Promise<PaginatedResult<ReturnType<typeof adaptPart>>> {
+      const qs = new URLSearchParams();
+      qs.set("page", String(args.page ?? 1));
+      qs.set("limit", String(Math.min(args.limit ?? 20, 100)));
+      if (args.search) qs.set("search", args.search);
+      const wrap = await api.list<BePart[]>(`/parts?${qs}`);
+      return {
+        data: wrap.data.map(adaptPart),
+        page: wrap.meta?.page ?? 1,
+        limit: wrap.meta?.limit ?? 20,
+        total: wrap.meta?.total ?? wrap.data.length,
+        totalPages: wrap.meta?.totalPages ?? 1,
+      };
     },
   },
 };
