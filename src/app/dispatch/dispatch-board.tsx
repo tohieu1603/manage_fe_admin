@@ -176,44 +176,50 @@ export default function DispatchBoard({ techs, jobs }: { techs: TechLite[]; jobs
                       <div className="text-[10px] text-ink-500">{t.skill}</div>
                     </div>
                   </div>
-                  {/* Hour cells double as drop targets — they sit in the same
-                      row as the absolute-positioned job pills above them. */}
-                  {HOURS.map((h) => {
-                    const cellKey = `${t.id}:${h}`;
-                    const isHover = hoverCell === cellKey;
-                    return (
-                      <div
-                        key={h}
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                          e.dataTransfer.dropEffect = "move";
-                          if (hoverCell !== cellKey) setHoverCell(cellKey);
-                        }}
-                        onDragLeave={() =>
-                          setHoverCell((c) => (c === cellKey ? null : c))
-                        }
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const jobId = e.dataTransfer.getData("text/plain");
-                          setHoverCell(null);
-                          setDragJob(null);
-                          if (jobId) place(jobId, t.id, h);
-                        }}
-                        className={`relative h-16 border-b border-r border-ink-100 transition-colors ${
-                          isHover ? "bg-brand-100/70 ring-2 ring-brand-400 ring-inset" : ""
-                        }`}
-                      />
-                    );
-                  })}
-                  {/* Job pills overlay — positioned absolutely on top of the
-                      hour grid using grid-column-start trickery via inline
-                      style. We render them after the hour cells so they sit
-                      on top but don't intercept drag events (pointer-events
-                      passes through to drop cells). */}
+                  {/* Single wide row spanning all 12 hour columns. Drop hour
+                      is computed from the cursor's X position — keeps grid
+                      placement simple and lets pills float on top without
+                      fighting per-cell layout. */}
                   <div
-                    className="pointer-events-none relative -mt-16 h-16"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = "move";
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                      const hour = 7 + Math.floor(ratio * 12);
+                      const cellKey = `${t.id}:${hour}`;
+                      if (hoverCell !== cellKey) setHoverCell(cellKey);
+                    }}
+                    onDragLeave={() =>
+                      setHoverCell((c) => (c?.startsWith(`${t.id}:`) ? null : c))
+                    }
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const rect = e.currentTarget.getBoundingClientRect();
+                      const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+                      const hour = 7 + Math.floor(ratio * 12);
+                      const jobId = e.dataTransfer.getData("text/plain");
+                      setHoverCell(null);
+                      setDragJob(null);
+                      if (jobId) place(jobId, t.id, hour);
+                    }}
+                    className="relative h-16 border-b border-ink-150"
                     style={{ gridColumn: "2 / span 12" }}
                   >
+                    {/* Hour grid lines + drop-target highlight under cursor. */}
+                    <div className="absolute inset-0 grid grid-cols-12 pointer-events-none">
+                      {HOURS.map((h) => {
+                        const cellKey = `${t.id}:${h}`;
+                        return (
+                          <div
+                            key={h}
+                            className={`border-r border-ink-100 transition-colors ${
+                              hoverCell === cellKey ? "bg-brand-100/70 ring-2 ring-brand-400 ring-inset" : ""
+                            }`}
+                          />
+                        );
+                      })}
+                    </div>
                     {techJobs.map((j) => {
                       const [hh, mm] = timeOf(j.scheduledAt).split(":").map(Number);
                       const start = (hh || 7) - 7 + (mm || 0) / 60;
@@ -231,7 +237,7 @@ export default function DispatchBoard({ techs, jobs }: { techs: TechLite[]; jobs
                             setDragJob(j.id);
                           }}
                           onDragEnd={() => setDragJob(null)}
-                          className={`pointer-events-auto absolute top-2 bottom-2 rounded-lg px-2 py-1.5 text-xs text-white overflow-hidden cursor-grab active:cursor-grabbing transition-opacity ${
+                          className={`absolute top-2 bottom-2 rounded-lg px-2 py-1.5 text-xs text-white overflow-hidden cursor-grab active:cursor-grabbing transition-opacity ${
                             dragJob === j.id ? "opacity-40" : ""
                           }`}
                           style={{

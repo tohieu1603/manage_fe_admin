@@ -201,7 +201,11 @@ export const db = {
   },
   customer: {
     async findMany(args: FindManyArgs = {}) {
-      const wrap = await api.list<BeCustomer[]>(`/customers?limit=${args.take ?? 200}`);
+      // BE caps page size at 100 — clamp here so callers passing 200+ don't
+      // 400 back from the validator.
+      const wrap = await api.list<BeCustomer[]>(
+        `/customers?limit=${Math.min(args.take ?? 100, 100)}`,
+      );
       if (args.include?.jobs) {
         const allJobs = await db.job.findMany();
         return wrap.data.map((c) =>
@@ -214,7 +218,9 @@ export const db = {
       try {
         const c = await api.get<BeCustomer>(`/customers/${args.where.id}`);
         if (args.include?.jobs) {
-          const wrap = await api.list<BeJob[]>(`/jobs?customerId=${args.where.id}&limit=200`);
+          const wrap = await api.list<BeJob[]>(
+            `/jobs?customerId=${args.where.id}&limit=100`,
+          );
           const techIdx = await fetchTechIndex();
           return adaptCustomer(c, wrap.data.map((j) => adaptJob(j, techIdx)));
         }
@@ -226,7 +232,7 @@ export const db = {
   },
   part: {
     async findMany() {
-      const wrap = await api.list<BePart[]>(`/parts?limit=200`);
+      const wrap = await api.list<BePart[]>(`/parts?limit=100`);
       return wrap.data.map(adaptPart);
     },
   },

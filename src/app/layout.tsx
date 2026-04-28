@@ -14,8 +14,12 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const { user } = await readSession();
-  if (!user) {
+  const { user, accessToken } = await readSession();
+  // Only render the AppShell when BOTH the user blob AND the access token
+  // are present. The user cookie has a 7-day TTL while the access token is
+  // 15 minutes — without this guard, the shell would wrap the /login page
+  // for users who let their access token expire.
+  if (!user || !accessToken) {
     return (
       <html lang="vi">
         <body className={inter.className}>{children}</body>
